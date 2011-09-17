@@ -1,4 +1,4 @@
-#VERSION: 1.11
+#VERSION: 1.2
 #AUTHORS: Christophe Dumez (chris@qbittorrent.org)
 
 # Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,7 @@ import StringIO, gzip, urllib2, tempfile, os
 import urllib
 import sgmllib
 import re
+import cookielib
 
 class sumotorrent(object):
   url = 'http://torrents.sumotorrent.com'
@@ -45,9 +46,21 @@ class sumotorrent(object):
   def download_torrent(self, url):
     file, path = tempfile.mkstemp()
     file = os.fdopen(file, "w")
-    # Download url
+    # Reconstruct referer URL
+    referer = url.replace('/torrent_download/', '/download/').replace('+', '%20')
+    user_agent = 'Mozilla/5.0 (X11; Linux i686; rv:6.0.2) Gecko/20100101 Firefox/6.0.2'
+    # Fetch cookies from referer page
+    cj = cookielib.LWPCookieJar()
+    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
+    urllib2.install_opener(opener)
+
+    pre_req = urllib2.Request(referer)
+    pre_req.add_header('User-Agent', user_agent)
+    urllib2.urlopen(pre_req)
+    # Actually download torrent
     req = urllib2.Request(url)
-    req.add_header('referer', "http://www.sumotorrent.com/searchResult.php")
+    req.add_header('referer', referer)
+    req.add_header('User-Agent', user_agent)
     response = urllib2.urlopen(req)
     dat = response.read()
     # Check if data is gzip encoded
