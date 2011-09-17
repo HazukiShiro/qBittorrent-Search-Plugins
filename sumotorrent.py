@@ -1,4 +1,4 @@
-#VERSION: 1.1
+#VERSION: 1.11
 #AUTHORS: Christophe Dumez (chris@qbittorrent.org)
 
 # Redistribution and use in source and binary forms, with or without
@@ -79,7 +79,7 @@ class sumotorrent(object):
       if params.has_key('href') and 'en/details/' in params['href'] and (self.td_counter is None or self.td_counter > 5):
         self.current_item = {}
         self.td_counter = 0
-        self.current_item['desc_link'] = self.url+params['href'].replace('http://', '')
+        self.current_item['desc_link'] = params['href']
       elif params.has_key('href') and params['href'].startswith("http://torrents.sumotorrent.com/download/"):
         parts = params['href'].strip().split('/')
         self.current_item['link'] = 'http://torrents.sumotorrent.com/torrent_download/'+parts[-3]+'/'+parts[-2]+'/'+urllib.quote(parts[-1]).replace('%20', '+')
