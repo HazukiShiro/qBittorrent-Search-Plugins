@@ -1,4 +1,4 @@
-#VERSION: 1.00
+#VERSION: 1.01
 #AUTHORS: cdgg (cdgg.cdgg@gmail.com), Shiro Hazuki (hazukishiki@mail.com)
 #
 #                    GNU GENERAL PUBLIC LICENSE
@@ -17,14 +17,15 @@
 #    GNU General Public License for more details.
 
 import urllib2, re, string
+from urllib import urlencode
 
 class torrentz(object):
   url = 'http://torrentz.eu'
   name = 'Torrentz'
   supported_categories = {'all': ''}
-	
+
   def search(self, what, cat='all'):
-    nextpage = "search?f={0}".format(what)
+    nextpage = "search?" + urlencode({'f': what})
     while nextpage != False:
       u = urllib2.urlopen("http://torrentz.eu/{0}".format(nextpage))
       c = ""
@@ -51,15 +52,26 @@ class torrentz(object):
         "engine_url" : "http://torrentz.eu"
       }
       link = [
+        "http://www.torrenthound.com/torrent/{0}",
+        "http://h33t.com/download.php?id={0}",
         "http://torrage.com/torrent/{0}.torrent",
         "http://torcache.com/torrent/{0}.torrent",
         "http://zoink.it/torrent/{0}.torrent"
       ]
-      selectedLink = 0
       m = None
       for line in l:
         m = re.match(pattern1,line)
-        temp["link"] = link[selectedLink].format(m.group(2))
+        nomatch = True
+        for x in link:
+          temp["link"] = x.format(m.group(2))
+          try:
+            urllib2.urlopen(temp["link"])
+            nomatch = False
+            break
+          except:
+            pass
+        if nomatch==True:
+          continue
         temp["name"] = re.sub("<(b|B)>|</(b|B)>","",m.group(3))
         m = re.search(pattern2,line)
         temp["seeds"] = m.group(2).replace(",","")
