@@ -1,5 +1,5 @@
-#VERSION: 1.00
-#AUTHORS: cdgg (cdgg.cdgg@gmail.com), Shiro Hazuki (hazukishiki@mail.com)
+#VERSION: 1.1
+#AUTHORS: Shiro Hazuki (hazukishiki@mail.com), cdgg (cdgg.cdgg@gmail.com)
 #
 #                    GNU GENERAL PUBLIC LICENSE
 #                       Version 3, 29 June 2007
@@ -17,15 +17,16 @@
 #    GNU General Public License for more details.
 
 import urllib2, re
+from urllib import urlencode
 
 class demonoid(object):
   url = 'http://www.demonoid.me'
   name = 'Demonoid'
   supported_categories = {'all': '0', 'movies': '1', 'tv': '3', 'music': '2', 'games': '4', 'anime': '9', 'software': '5'}
-  
+
   def __init__(self):
     self.supported_categories = {'all': '0', 'movies': '1', 'tv': '3', 'music': '2', 'games': '4', 'anime': '9', 'software': '5'}
-  
+
   def resetOutput(self):
     self.temp = {
       "link" : -1,
@@ -33,14 +34,29 @@ class demonoid(object):
       "size" : -1,
       "seeds" : -1,
       "leech" : -1,
-      "engine_url" : "http://www.demonoid.me"
+      "engine_url" : "http://www.demonoid.me",
+      "description" : -1
     }
     return True
-  
+
   def search(self, what, cat='all'):
-    nextpage = "/files/?category={0}&subcategory=0&language=0&quality=0&seeded=0&external=2&query={1}&uid=0&sort=".format(self.supported_categories[cat],what)
+    urldata = {
+      'category': self.supported_categories[cat],
+      'subcategory': 0,
+      'language': 0,
+      'quality': 0,
+      'seeded': 0,
+      'external': 2,
+      'query': what,
+      'uid': 0,
+      'sort': ''
+    }
+    nextpage = "/files/?" + urlencode(urldata)
     while nextpage != False:
-      u = urllib2.urlopen("http://www.demonoid.me{0}".format(nextpage))
+      try:
+        u = urllib2.urlopen("http://www.demonoid.me{0}".format(nextpage))
+      except:
+        break
       self.resetOutput()
       nextpage = False
       pos = 0
@@ -59,7 +75,8 @@ class demonoid(object):
                   flag = 0
                   continue
                 m = re.search("<a href=\"(.+)\">(.+)</a>",line)
-                self.temp["link"] = "http://www.demonoid.me{0}".format(m.group(1).replace("details","download"))
+                self.temp["description"] = "http://www.demonoid.me{0}".format(m.group(1))
+                self.temp["link"] = self.temp["description"].replace("details","download")
                 self.temp["name"] = m.group(2)
                 pos = 2
                 counter = 10
@@ -78,7 +95,7 @@ class demonoid(object):
               elif pos==4:
                 m = re.search(">([0-9\.,]+)</",line)
                 self.temp["leech"] = re.sub(",|\.","",m.group(1))
-                print "{0}|{1}|{2}|{3}|{4}|{5}".format(self.temp["link"],self.temp["name"],self.temp["size"],self.temp["seeds"],self.temp["leech"],self.temp["engine_url"])
+                print "{0}|{1}|{2}|{3}|{4}|{5}|{6}".format(self.temp["link"],self.temp["name"],self.temp["size"],self.temp["seeds"],self.temp["leech"],self.temp["engine_url"],self.temp["description"])
                 self.resetOutput()
                 pos = 1
                 flag = 0
