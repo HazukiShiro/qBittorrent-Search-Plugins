@@ -1,5 +1,5 @@
-#VERSION: 1.1
-#AUTHORS: Shiro Hazuki (hazukishiki@mail.com), cdgg (cdgg.cdgg@gmail.com)
+#VERSION: 1.2
+#AUTHORS: Shiro Hazuki (hazuki.shiro@gmail.com), cdgg (cdgg.cdgg@gmail.com)
 #
 #                    GNU GENERAL PUBLIC LICENSE
 #                       Version 3, 29 June 2007
@@ -15,74 +15,86 @@
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
+#
+'DivxTotal plug-in for qBittorrent'
 
-import urllib2, re
-from urllib import urlencode
+import re
+import urllib2
 
 class divxtotal(object):
-	url = 'http://divxtotal.com'
+	url  = 'http://divxtotal.com'
 	name = 'DivxTotal'
-	supported_categories = {'all': '', 'movies': 'peliculas', 'tv': 'series', 'music': 'musica', 'software': 'programas'}
+
+	supported_categories = {
+		'all'      : '',
+		'movies'   : 'peliculas',
+		'tv'       : 'series',
+		'music'    : 'musica',
+		'software' : 'programas',
+	}
+
+	out = [-1]*7
+	(LINK,NAME,SIZE,SEEDS,LEECH,ENGINE_URL,DESCRIPTION) = range(0,7)
+
+	MULTIPLIERS = {
+		'B'  : 1,
+		'KB' : 1024,
+		'MB' : 1024**2,
+		'GB' : 1024**3,
+	}
+
+	def reset(self):
+		self.out = [-1]*7
+		self.out[self.ENGINE_URL] = self.url
+
+	def put(self):
+		print '|'.join([str(x) for x in self.out])
+		self.reset()
 
 	def __init__(self):
-		self.supported_categories = {'all': '', 'movies': 'peliculas', 'tv': 'series', 'music': 'musica', 'software': 'programas'}
-
-	def out(self):
-		print ""
+		self.reset()
 
 	def search(self, what, cat='all'):
-		urldata = {
-		'busqueda': what
-		}
-		nextpage = "buscar.php?" + urlencode(urldata)
+		nextpage = 'buscar.php?busqueda=' + what
 		while nextpage != False:
-			u = urllib2.urlopen("http://divxtotal.com/" + nextpage)
-
-			temp = {
-				"link" : -1,
-				"name" : -1,
-				"size" : -1,
-				"seeds" : -1,
-				"leech" : -1,
-				"engine_url" : "http://divxtotal.com",
-				"description" : -1
-			}
+			u = urllib2.urlopen('http://divxtotal.com/' + nextpage)
 			nextpage = False
-			content = ""
+
+			content = ''
 			for line in u.readlines():
 				content += line.strip()
-			for x in re.split("<li class=\"section_item2?\">",content)[1:-1]:
+			u.close()
 
-				# Begin name, link, description
-				m = re.match('<p class="seccontnom">(.+)<p class="seccontgen"',x)
-				n = re.search("<a href=\"(.+)/torrent/([0-9]+)/(.+)\"(.+)>(.+)</a>",m.group(1))
-				temp["description"] = "http://divxtotal.com/" + re.search("<a href=\"(.+)/\"(.+)>(.+)</a>",m.group(1)).group(1) + "/"
-				temp["link"] = "http://divxtotal.com/download.php?id={0}".format(
+			for item in re.split('<li class="section_item2?">', content)[1:-1]:
+
+				# Name, link and description
+				match = re.search('<p class="seccontnom">(.+)<p class="seccontgen"', item)
+				n = re.search('<a href="(.+)/torrent/([0-9]+)/(.+)"(.+)>(.+)</a>', match.group(1))
+				self.out[self.DESCRIPTION] = 'http://divxtotal.com/' + re.search('<a href="(.+)/"(.+)>(.+)</a>', match.group(1)).group(1) + '/'
+				self.out[self.LINK] = 'http://divxtotal.com/download.php?id={0}'.format(
 					n.group(2)
 				)
-				temp["name"] = n.group(5)
-				# End name, link, description
+				self.out[self.NAME] = n.group(5)
 
-				# Begin size
-				m = re.search('<p class="seccontfetam">(.+)</p></li>', x)
-				if type(re.search("^[0-9\-]+$",m.group(1)))==type(None):
-					t = {"GB":1024**3,"MB":1024**2,"KB":1024,"B":1}
-					n = re.search("([0-9\.]+) (.+)",m.group(1))
-					s = int(float(n.group(1))*t[n.group(2)])
-					temp["size"] = s
-				# End size
+				# Torrent size
+				match = re.search('<p class="seccontfetam">(.+)</p></li>', item)
+				if re.search('^[0-9\-]+$', match.group(1))==None:
+					matchSize = re.search('([0-9\.]+) (.+)', match.group(1))
+					size = int(
+						float(matchSize.group(1)) * self.MULTIPLIERS[matchSize.group(2)]
+					)
+					self.out[self.SIZE] = size
 
-				# Begin category
-				m = re.search('<p class="seccontgen">(.+)</p><p class="seccontfetam', x)
-				n = re.search("<a href=\"(.+)/\"(.+)</a>",m.group(1)).group(1)
-				if cat=="all" or n==self.supported_categories[cat]:
+				# Category
+				match = re.search('<p class="seccontgen">(.+)</p><p class="seccontfetam', item)
+				matchCategory = re.search("<a href=\"(.+)/\"(.+)</a>", match.group(1)).group(1)
+				if cat=='all' or matchCategory==self.supported_categories[cat]:
 					print_this = True
-				# End category
 
 				if print_this:
-					print "{0}|{1}|{2}|{3}|{4}|{5}|{6}".format(temp["link"],temp["name"],temp["size"],temp["seeds"],temp["leech"],temp["engine_url"],temp["description"])
+					self.put()
 					print_this = False
 
-			m = re.search("<a href='([A-z0-9\-\&\=\+\?\.]+)'>Siguiente >>", re.split("<div class=\"pagination\">",content)[-1])
-			if type(m)!=type(None):
-				nextpage = m.group(1)
+			match = re.search("<a href='([A-z0-9\-\&\=\+\?\.]+)'>Siguiente >>", re.split('<div class="pagination">',content)[-1])
+			if match!=None:
+				nextpage = match.group(1)

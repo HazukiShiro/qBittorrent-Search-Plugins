@@ -1,5 +1,5 @@
-#VERSION: 1.1
-#AUTHORS: Shiro Hazuki (hazukishiki@mail.com), cdgg (cdgg.cdgg@gmail.com)
+#VERSION: 1.2
+#AUTHORS: Shiro Hazuki (hazuki.shiro@gmail.com), cdgg (cdgg.cdgg@gmail.com)
 #
 #                    GNU GENERAL PUBLIC LICENSE
 #                       Version 3, 29 June 2007
@@ -15,84 +15,112 @@
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
+#
+'TorrentZ plug-in for qBittorrent'
 
-import urllib2, re, string
-from urllib import urlencode
+import re
+import string
+import urllib2
 
 class torrentz(object):
-	url = 'http://torrentz.eu'
+	url  = 'http://torrentz.eu'
 	name = 'Torrentz'
+
 	supported_categories = {'all': ''}
 
+	out = [-1]*7
+	(LINK,NAME,SIZE,SEEDS,LEECH,ENGINE_URL,DESCRIPTION) = range(0,7)
+
+	MULTIPLIERS = {
+		'b'  : 1,
+		'B'  : 1,
+		'Kb' : 1024,
+		'Mb' : 1024**2,
+		'Gb' : 1024**3,
+	}
+
+	def reset(self):
+		self.out = [-1]*7
+		self.out[self.ENGINE_URL] = self.url
+
+	def put(self):
+		print '|'.join([str(x) for x in self.out])
+		self.reset()
+
+	def __init__(self):
+		self.reset()
+
 	def search(self, what, cat='all'):
-		nextpage = "search?" + urlencode({'f': what})
+		nextpage = 'search?f=' + what
 		while nextpage != False:
-			u = urllib2.urlopen("http://torrentz.eu/{0}".format(nextpage))
-			c = ""
+			u = urllib2.urlopen('http://torrentz.eu/' + nextpage)
+
+			content = ''
 			for line in u:
-				c += line.strip("\n")
-			m = re.search("<div class=\"results\">(.+)</div><div class=\"help\">",c)
-			c = m.group(1)
-			l = string.split(c,"<dl>")[1:]
-			temp = string.split(l[-1],"</dl>")
+				content += line.strip('\n')
+			u.close()
+
+			m = re.search('<div class="results">(.+)</div><div class="help">', content)
+			content = m.group(1)
+
+			l = string.split(content, "<dl>")[1:]
+
+			temp = string.split(l[-1], "</dl>")
 			l[-1] = temp[0]
 			p = temp[1]
+
+			# Searches for another page
 			nextpage = False
-			m = re.search("<a href=\"/([a-zA-Z0-9\%\&\;\+\?\=]+)\">Next \&raquo\;</a>",p)
-			if type(m)!=type(None):
-				nextpage = m.group(1).replace("&amp;","&")
-			pattern1 = "<dt(.*)><a href=\"/([a-zA-Z0-9]+)\">(.+)</a>"
-			pattern2 = "<span class=\"s\">(.+)</span> <span class=\"u\">(.+)</span> <span class=\"d\">(.+)</span></dd>"
-			temp = {
-				"link"        : -1,
-				"name"        : -1,
-				"size"        : -1,
-				"seeds"       : -1,
-				"leech"       : -1,
-				"engine_url"  : "http://torrentz.eu",
-				"description" : -1
-			}
+			m = re.search("<a href=\"/([a-zA-Z0-9\%\&\;\+\?\=]+)\">Next \&raquo\;</a>", p)
+			if m!=None:
+				nextpage = m.group(1).replace("&amp;", "&")
+
+			# Name, link and description link
+			pattern1 = '<dt.*><a href="/([a-zA-Z0-9]+)">(.+)</a>'
+
+			# Seed, leech and size
+			pattern2 = '<span class="s">(.+)</span> <span class="u">(.+)</span> <span class="d">(.+)</span></dd>'
+
+			# Valid links
 			link = [
-				"http://www.torrenthound.com/torrent/{0}",
-				"http://h33t.com/download.php?id={0}",
-				"http://torrage.com/torrent/{0}.torrent",
-				"http://torcache.com/torrent/{0}.torrent",
-				"http://zoink.it/torrent/{0}.torrent"
+				'http://www.torrenthound.com/torrent/{0}',
+				'http://h33t.com/download.php?id={0}',
+				'http://torrage.com/torrent/{0}.torrent',
+				'http://torcache.com/torrent/{0}.torrent',
+				'http://zoink.it/torrent/{0}.torrent',
 			]
+
 			m = None
+
 			for line in l:
-				m = re.match(pattern1,line)
-				temp["description"] = "{0}/{1}".format(temp["engine_url"],m.group(2))
-				nomatch = True
-				for x in link:
-					temp["link"] = x.format(m.group(2))
+				m = re.match(pattern1, line)
+				self.out[self.DESCRIPTION] = '{0}/{1}'.format(self.out[self.ENGINE_URL], m.group(1))
+
+				# Test whether the link is availabe or not
+				available = False
+				for current_link in link:
+					self.out[self.LINK] = current_link.format(m.group(1))
 					try:
-						urllib2.urlopen(temp["link"])
-						nomatch = False
+						urllib2.urlopen(self.out[self.LINK])
+						available = True
 						break
 					except:
 						pass
-				if nomatch==True:
+
+				if not available:
 					continue
-				temp["name"] = re.sub("<(b|B)>|</(b|B)>","",m.group(3))
-				m = re.search(pattern2,line)
-				temp["seeds"] = m.group(2).replace(",","")
-				temp["leech"] = m.group(3).replace(",","")
-				t = {"Gb":1024**3,"Mb":1024**2,"Kb":1024,"B":1,"b":1}
-				n = re.search("([0-9,.]+) (.+)",m.group(1))
+
+				self.out[self.NAME] = re.sub('<[bB]>|</[bB]>', '', m.group(2))
+
+				m = re.search(pattern2, line)
+
+				self.out[self.SEEDS] = m.group(2).replace(',', '')
+				self.out[self.LEECH] = m.group(3).replace(',', '')
+
+				# Torrent size
+				n = re.search("([0-9,.]+) (.+)", m.group(1))
 				try:
-					s = int(float(n.group(1))*t[n.group(2)])
-					temp["size"] = s
+					self.out[self.SIZE] = int(float(n.group(1)) * self.MULTIPLIERS[n.group(2)])
+					self.put()
 				except:
-					pass
-				print "{0}|{1}|{2}|{3}|{4}|{5}|{6}".format(temp["link"],temp["name"],temp["size"],temp["seeds"],temp["leech"],temp["engine_url"],temp["description"])
-				temp = {
-					"link"        : -1,
-					"name"        : -1,
-					"size"        : -1,
-					"seeds"       : -1,
-					"leech"       : -1,
-					"engine_url"  : "http://torrentz.eu",
-					"description" : -1
-				}
-			u.close()
+					self.reset()
