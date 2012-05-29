@@ -1,5 +1,6 @@
-#VERSION: 1.0
+#VERSION: 1.1
 #AUTHORS: Shiro Hazuki (hazuki.shiro@gmail.com)
+#CONTRIBUTORS: Joe (boxofmailforme@gmail.com)
 #
 #                    GNU GENERAL PUBLIC LICENSE
 #                       Version 3, 29 June 2007
@@ -16,136 +17,160 @@
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
-'NyaaTorrents plug-in for qBittorrent'
+
+
+from __future__ import print_function
+
+try:
+    from urllib import urlencode
+except:
+    from urllib.parse import urlencode
 
 import re
 import string
-import urllib2
-from urllib import urlencode
+from helpers import retrieve_url
+
 
 class nyaatorrents(object):
-	url  = 'http://www.nyaa.eu'
-	name = 'NyaaTorrents'
+    url  = 'http://www.nyaa.eu'
+    name = 'NyaaTorrents'
+    supported_categories = {
+        'all'       : ['0_0'],
+        'music'     : ['3_0','33_0'], # Lossy Audio and Lossless Audio
+        'anime'     : ['1_0'],
+        'software'  : ['6_0'],
+        'pictures'  : ['4_0'],
+        'books'     : ['2_0'],
+    }
+    
+    def search(self, what, cat='all'):
+        for current_cat in self.supported_categories[cat]:
+            for current_page in range(2, self.Page(what, 1, current_cat).load().find_torrents(True).last_page+1):
+                self.Page(what, current_page, current_cat).load().find_torrents(True)
 
-	# The 'music' category has 2 items because NyaaTorrents divides
-	# it in 'Lossy Audio' (e.g. MP3) and 'Lossless Audio' (e.g. MKA).
-	supported_categories = {
-		'all'       : ['0_0'],
-		'music'     : ['3_0','33_0'],
-		'anime'     : ['1_0'],
-		'software'  : ['6_0'],
-		'pictures'  : ['4_0'],
-		'books'     : ['2_0'],
-	}
+    class Torrent(object):
+        _link        = -1
+        _name        = -1
+        _size        = -1
+        _seeds       = -1
+        _leech       = -1
+        _description = -1
+        
+        def __str__(self):
+            return '|'.join([str(x) for x in [
+                self._link,
+                self._name,
+                self._size,
+                self._seeds,
+                self._leech,
+                nyaatorrents.url,
+                self._description,
+            ]])
 
-	out = [-1]*7
-	(LINK,NAME,SIZE,SEEDS,LEECH,ENGINE_URL,DESCRIPTION) = range(0,7)
+        def link(self, link):
+            self._link = link
+            return self
 
-	MULTIPLIERS = {
-		'B'   : 1,
-		'KiB' : 1024,
-		'MiB' : 1024**2,
-		'GiB' : 1024**3,
-		'TiB' : 1024**4,
-	}
+        def description(self, description):
+            self._description = description
+            return self
 
-	def reset(self):
-		self.out = [-1]*7
-		self.out[self.ENGINE_URL] = self.url
+        def seeds(self, i):
+            self._seeds = int(i)
+            return self
 
-	def put(self):
-		print '|'.join([str(x) for x in self.out])
-		self.reset()
+        def leech(self, i):
+            self._leech = int(i)
+            return self
 
-	def getpageurl(self, what, cat, page):
-		return '?' + urlencode((
-			('page', 'search'),
-			('cats', cat),
-			('filter', '0'),
-			('offset', page),
-		)) + '&term=' + what
+        def name(self, name):
+            if re.search('&#[0-9]{1,3};', name) != None:
+                for i in range(256):
+                    name = name.replace('&#{0};'.format(i),chr(i))
+            self._name = name.replace('|','-')
+            return self
 
-	def __init__(self):
-		self.reset()
+        def size(self, torrent_size):
+            if type(torrent_size) == type(1):
+                self._size = torrent_size
+            else:
+                match = re.search("([0-9\.]+) ?([kmgt]?i?b)", torrent_size.lower())
+                if match != None:
+                    n = float(match.group(1))
+                    s = match.group(2)
+                    if s == 'b':
+                        self._size = int(n)
+                    elif re.match('ki?b', s) != None:
+                        self._size = int( n * 1024 )
+                    elif re.match('mi?b', s) != None:
+                        self._size = int( n * 1024**2 )
+                    elif re.match('gi?b', s) != None:
+                        self._size = int( n * 1024**3 )
+                    elif re.match('ti?b', s) != None:
+                        self._size = int( n * 1024**4 )
+            return self
 
-	def search(self, what, cat='all'):
-		for current_category in self.supported_categories[cat]:
-			last_page     = 0
-			current_page  = 1
-			nextpage      = self.getpageurl(what, current_category, current_page)
+    class Page(object):
+        html = ''
+        torrents = []
+        last_page = 1
 
-			while nextpage!=False:
-				u = urllib2.urlopen(self.url + nextpage)
+        def __init__(self, query="", page=1, category="all"):
+            self.url = 'http://www.nyaa.eu/?' + urlencode((
+                ('page'   , 'search'),
+                ('cats'   , category),
+                ('filter' , '0'),
+                ('offset' , page),
+            )) + '&term=' + query
 
-				html = ""
-				for line in u:
-					html += line.strip()
-				u.close()
+        def load(self):
+            self.html = retrieve_url(self.url)
+            return self
 
-				html            = string.split(html, 'tr class="pages"')[1]
-				pages, torrents = string.split(html, '</table')[0:2]
-				torrents        = string.split(torrents, '<tr')[2:]
+        def find_torrents(self, echo=True):
+            html = self.html
+            try:
+                html = string.split(html, 'tr class="pages"')[1]
+            except:
+                return self.parse_description(echo)
+            pages, torrents = string.split(html, '</table')[0:2]
+            torrents = string.split(torrents, '<tr')[2:]
+            match = re.search('offset=([0-9]+)">(&gt;&gt;|>>)</a>', pages)
+            if match != None:
+                self.last_page = int(match.group(1))
+            for x in torrents:
+                match = {
+                    'name' : re.search('<td class="tlistname"><a href="[^"]+">(.+)</a></td><td class="tlistdownload">',x),
+                    'description' : re.search('<td class="tlistname"><a href="([^"]+)">',x),
+                    'seeds' : re.search('<td class="tlistsn">([0-9\.]+)',x),
+                    'leech' : re.search('<td class="tlistln">([0-9\.]+)',x),
+                    'size' : re.search('<td class="tlistsize">([0-9\.]+ *[a-zA-Z]+)</td>',x),
+                }
+                if match['seeds'] == None:
+                    match['seeds'] = -1
+                if match['leech'] == None:
+                    match['leech'] = -1
+                if None in match.values():
+                    continue
+                self.torrents.append( nyaatorrents.Torrent() )
+                for key in match:
+                    value = match[key]
+                    self.torrents[-1].__class__.__dict__[key](self.torrents[-1], value if value == -1 else value.group(1))
+                self.torrents[-1].link(self.torrents[-1]._description.replace('torrentinfo','download'))
+                if echo:
+                    print(self.torrents[-1])
+            return self
 
-				# Searches for last page
-				if last_page==0:
-					match = re.search('offset=([0-9]+)">&gt;&gt;</a>', pages)
-					if match!=None:
-						last_page = int(match.group(1))
-
-				for x in torrents[:1]+torrents[2:]:
-					(
-						infoUrlAndName,
-						dummy,          # This is never used
-						size,
-						seed,
-						leech
-					) = string.split(x, '</td')[1:6]
-
-					# Description link and torrent name
-					match = re.search('<a href="(.+)">(.+)</a>', infoUrlAndName)
-					if match==None:
-						self.reset()
-						continue
-					(
-						self.out[self.DESCRIPTION],
-						self.out[self.NAME]
-					) = (match.group(1).replace('&amp;','&'),match.group(2))
-
-					# Replaces some HTML entities
-					for i in range(33,48):
-						self.out[self.NAME] = self.out[self.NAME].replace('&#{};'.format(i),chr(i))
-					self.out[self.NAME] = self.out[self.NAME].replace('|','-')
-
-					# Download link
-					self.out[self.LINK] = self.out[self.DESCRIPTION].replace('torrentinfo','download')
-
-					# Seeds
-					match = re.search('>([0-9\.]+)', seed)
-					if match==None:
-						self.reset()
-						continue
-					self.out[self.SEEDS] = int(match.group(1))
-
-					# Leech
-					match = re.search('>([0-9\.]+)', leech)
-					if match==None:
-						self.reset()
-						continue
-					self.out[self.LEECH] = int(match.group(1))
-
-					# Torrent size
-					match = re.search('>([0-9\.]+) ([a-zA-Z]+)', size)
-					if match==None:
-						self.reset()
-						continue
-					tsize = float(match.group(1)) * self.MULTIPLIERS[match.group(2)]
-					self.out[self.SIZE] = int(tsize) if tsize%1==0 else int(tsize)+1
-
-					# Print the current torrent's information
-					self.put()
-
-				if current_page<last_page:
-					current_page += 1
-					nextpage      = self.getpageurl(what,current_category,current_page)
-				else:
-					nextpage = False
+        def parse_description(self, echo=True):
+            self.torrents.append(
+                nyaatorrents.Torrent()
+                .name(re.search('class="tinfotorrentname">([^<]+)</td>', self.html).group(1))
+                .seeds(re.search('class="tinfosn">([^<]+)<', self.html).group(1))
+                .leech(re.search('class="tinfoln">([^<]+)<', self.html).group(1))
+                .link(re.search('<a href="([^"]+)"[^>]*><img[^>]*download[^>]*></a>',self.html).group(1).replace("&amp;","&"))
+                .size(re.search('<td class="vtop">([0-9\.]+ (b|ki?b|mi?b|gi?b|ti?b))</td>',self.html.lower()).group(1))
+            )
+            self.torrents[-1].description(self.torrents[-1]._link.replace("page=download","page=torrentinfo"))
+            if echo:
+                print(self.torrents[-1])
+            return self
